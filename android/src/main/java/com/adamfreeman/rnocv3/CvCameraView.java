@@ -20,6 +20,7 @@ import android.view.OrientationEventListener;
 import android.util.Log;
 import androidx.core.content.ContextCompat;
 
+import org.opencv.core.MatOfPoint;
 import org.opencv.videoio.VideoWriter;
 import org.opencv.android.Utils;
 import org.opencv.android.JavaCameraView;
@@ -36,8 +37,8 @@ import org.opencv.imgproc.Imgproc;
 import org.opencv.android.CameraBridgeViewBase.CvCameraViewListener2;
 import org.opencv.objdetect.CascadeClassifier;
 import org.opencv.objdetect.Objdetect;
-// import org.opencv.face.Face;
-// import org.opencv.face.Facemark;
+import org.opencv.face.Face;
+import org.opencv.face.Facemark;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -46,15 +47,16 @@ import java.io.InputStream;
 import java.io.File;
 import java.lang.Runnable;
 import java.util.ArrayList;
+import java.util.List;
 import java.util.Timer;
 import java.util.TimerTask;
 
-// enum whichOne {
-//     FACE_CLASSIFIER,
-//     EYES_CLASSIFIER,
-//     NOSE_CLASSIFIER,
-//     MOUTH_CLASSIFIER
-// }
+enum whichOne {
+    FACE_CLASSIFIER,
+    EYES_CLASSIFIER,
+    NOSE_CLASSIFIER,
+    MOUTH_CLASSIFIER
+}
 
 class RecordVidBlock implements Runnable {
 
@@ -126,7 +128,7 @@ class InitCameraBlock implements Runnable {
     }
 }
 
-public class CvCameraView extends JavaCameraView implements CvCameraViewListener2 {
+public class CvCameraView extends JavaCameraViewFixed implements CvCameraViewListener2Fixed {
 
     private static final String TAG = CvCameraView.class.getSimpleName();
 
@@ -144,11 +146,12 @@ public class CvCameraView extends JavaCameraView implements CvCameraViewListener
     private CascadeClassifier      mNoseClassifier;
     private CascadeClassifier      mMouthClassifier;
     private boolean                mSuckUpFrames;
-    // private Facemark               mLandmarks;
+    private Facemark               mLandmarks;
 
     private static final Scalar    FACE_RECT_COLOR     = new Scalar(255, 255, 0, 255);
     private boolean                mUseLandmarks       = false;
-    // private boolean                mUseFaceDetection   = false;
+    private boolean                mUseFaceDetection   = false;
+    private boolean                mUseMRZDetection   = false;
     private boolean                mUpdateOverlay      = false;
     private boolean                mSendFrameSize      = true;
     private float                  mRelativeFaceSize   = 0.2f;
@@ -249,6 +252,9 @@ public class CvCameraView extends JavaCameraView implements CvCameraViewListener
         //Log.d(TAG, "In setCvInvoke cvinvoke is: " + cvinvoke.toString());
         this.mCvInvokeGroup = cvinvoke;
     }
+    public void setUseMRZDetection(boolean value) {
+        this.mUseMRZDetection = value;
+    }
 
     private File readClassifierFile(String cascadeClassifier) {
       File cascadeFile = null;
@@ -302,45 +308,45 @@ public class CvCameraView extends JavaCameraView implements CvCameraViewListener
         this.mOverlayInterval = overlayInterval;
     }
 
-    // public void setLandmarksModel(String landmarksModel) {
-    //     mUseLandmarks = true;
-    //     File landmarksFile = readClassifierFile(landmarksModel + ".yaml");
-    //     // setup landmarks detector
-    //     mLandmarks = Face.createFacemarkLBF();
-    //     mLandmarks.loadModel(landmarksFile.getAbsolutePath());
-    // }
+    public void setLandmarksModel(String landmarksModel) {
+        mUseLandmarks = true;
+        File landmarksFile = readClassifierFile(landmarksModel + ".yaml");
+        // setup landmarks detector
+        mLandmarks = Face.createFacemarkLBF();
+        mLandmarks.loadModel(landmarksFile.getAbsolutePath());
+    }
 
-    // public void setCascadeClassifier(String cascadeClassifier, whichOne classifierType) {
-    //     mUseFaceDetection = true;
-    //     File cascadeFile = readClassifierFile(cascadeClassifier + ".xml");
-    //     if (cascadeFile != null) {
-    //         CascadeClassifier classifier = new CascadeClassifier(cascadeFile.getAbsolutePath());
-    //         if (classifier.empty()) {
-    //             Log.e(TAG, "Failed to load cascade classifier");
-    //             classifier = null;
-    //         }
-    //         else {
-    //             Log.i(TAG, "Loaded classifier from " + cascadeFile.getAbsolutePath());
-    //         }
-    //         cascadeFile.delete();
+    public void setCascadeClassifier(String cascadeClassifier, whichOne classifierType) {
+        mUseFaceDetection = true;
+        File cascadeFile = readClassifierFile(cascadeClassifier + ".xml");
+        if (cascadeFile != null) {
+            CascadeClassifier classifier = new CascadeClassifier(cascadeFile.getAbsolutePath());
+            if (classifier.empty()) {
+                Log.e(TAG, "Failed to load cascade classifier");
+                classifier = null;
+            }
+            else {
+                Log.i(TAG, "Loaded classifier from " + cascadeFile.getAbsolutePath());
+            }
+            cascadeFile.delete();
 
-    //         switch (classifierType) {
-    //             case EYES_CLASSIFIER:
-    //                 mEyesClassifier = classifier;
-    //                 break;
-    //             case NOSE_CLASSIFIER:
-    //                 mNoseClassifier = classifier;
-    //                 break;
-    //             case MOUTH_CLASSIFIER:
-    //                 mMouthClassifier = classifier;
-    //                 break;
-    //             default:
-    //             case FACE_CLASSIFIER:
-    //                 mFaceClassifier = classifier;
-    //                 break;
-    //         }
-    //     }
-    // }
+            switch (classifierType) {
+                case EYES_CLASSIFIER:
+                    mEyesClassifier = classifier;
+                    break;
+                case NOSE_CLASSIFIER:
+                    mNoseClassifier = classifier;
+                    break;
+                case MOUTH_CLASSIFIER:
+                    mMouthClassifier = classifier;
+                    break;
+                default:
+                case FACE_CLASSIFIER:
+                    mFaceClassifier = classifier;
+                    break;
+            }
+        }
+    }
 
     public void onCameraViewStarted(int width, int height) {
         Log.d(TAG, "In onCameraViewStarted ... width is: " + width + " height is: " + height);
@@ -460,7 +466,7 @@ public class CvCameraView extends JavaCameraView implements CvCameraViewListener
         return (distX + distY);
     }
 
-    public Mat onCameraFrame(CvCameraViewFrame inputFrame) {
+    public Mat onCameraFrame(CameraBridgeViewBaseFixed.CvCameraViewFrame inputFrame) {
         Mat in = inputFrame.rgba();
 
         Mat ingray = inputFrame.gray();
@@ -481,188 +487,312 @@ public class CvCameraView extends JavaCameraView implements CvCameraViewListener
             Core.flip(ingray, ingray, 1);
         }
 
-        // if (mUseFaceDetection) {
+        if(mUseMRZDetection) {
+            int IMG_HEIGHT = 600;
+            double RECTX = IMG_HEIGHT / 46.154;
+            double RECTY = IMG_HEIGHT / 120.0;
+            double SQLXY = IMG_HEIGHT / 39.0;
 
-        //     Imgproc.equalizeHist(ingray, ingray);
-        //     rotateImage(ingray);
+            Mat dst = in.clone();
+            Imgproc.cvtColor(dst, dst, Imgproc.COLOR_RGBA2GRAY, 0);
+            Size ksize =  new Size(3, 3);
+            Imgproc.GaussianBlur(dst, dst, ksize, 0, 0);
 
-        //     int height = ingray.rows();
-        //     if (Math.round(height * mRelativeFaceSize) > 0) {
-        //         mAbsoluteFaceSize = Math.round(height * mRelativeFaceSize);
-        //     }
+            Mat rectKernel = Imgproc.getStructuringElement(
+                    Imgproc.MORPH_RECT,
+                    new Size(RECTX, RECTY)
+            );
 
-        //     //-- Detect faces
-        //     MatOfRect faces = new MatOfRect();
-        //     ArrayList<MatOfPoint2f> landmarks = new ArrayList<MatOfPoint2f>();
-        //     boolean landmarksFound = false;
-        //     if (mFaceClassifier != null && ingray != null) {
-        //         if (mUseLandmarks) {
-        //             // more sensitive if determining landmarks
-        //             mFaceClassifier.detectMultiScale(ingray, faces, 1.3, 5, 0|Objdetect.CASCADE_SCALE_IMAGE, new Size(mAbsoluteFaceSize, mAbsoluteFaceSize), new Size());
-        //             mLandmarks.fit(ingray, faces, landmarks);
-        //             if (landmarks.size() > 0) {
-        //                 landmarksFound = true;
-        //             }
-        //         }
-        //         else {
-        //             mFaceClassifier.detectMultiScale(ingray, faces, 1.1, 2, 0|Objdetect.CASCADE_SCALE_IMAGE, new Size(mAbsoluteFaceSize, mAbsoluteFaceSize), new Size());
-        //         }
-        //     }
-        //     Rect[] facesArray = faces.toArray();
 
-        //     String faceInfo = "";
-        //     if (facesArray.length > 0) {
-        //         StringBuffer sb = new StringBuffer();
-        //         sb.append("{\"faces\":[");
-        //         for (int i = 0; i < facesArray.length; i++) {
-        //             sb.append(getPartJSON(ingray, null, facesArray[i]));
-        //             String id = "faceId" + i;
-        //             sb.append(",\"faceId\":\""+id+"\"");
+            Imgproc.morphologyEx(dst, dst, Imgproc.MORPH_BLACKHAT, rectKernel);
 
-        //             if (mEyesClassifier != null ||
-        //                 mNoseClassifier != null ||
-        //                 mMouthClassifier != null) {
+            Imgproc.Sobel(dst, dst, CvType.CV_8U, 1, 0, 1);
 
-        //                 Rect faceROI = facesArray[i];
-        //                 Mat dFace = ingray.submat(faceROI);
+
+            org.opencv.core.Core.convertScaleAbs( dst, dst, 1, 0);
+
+
+            Imgproc.morphologyEx(dst, dst, Imgproc.MORPH_CLOSE, rectKernel);
+            Imgproc.threshold(dst, dst, 0, 255, Imgproc.THRESH_BINARY | Imgproc.THRESH_OTSU);
+
+            Mat sqKernel = Imgproc.getStructuringElement(
+                    Imgproc.MORPH_RECT,
+                    new Size(SQLXY, SQLXY)
+            );
+
+
+            Imgproc.morphologyEx(dst, dst, Imgproc.MORPH_CLOSE, sqKernel);
+            Mat M = Mat.ones(3, 3, CvType.CV_8U);
+            Imgproc.erode(dst, dst, M, new Point(-1, -1), 4);
+
+            Mat hierarchy = new Mat();
+
+            List<MatOfPoint> contours = new ArrayList<MatOfPoint>();
+            Imgproc.findContours(
+                    dst,
+                    contours,
+                    hierarchy,
+                    Imgproc.RETR_EXTERNAL,
+                    Imgproc.CHAIN_APPROX_SIMPLE
+            );
+
+            boolean mrzAreaFound = false;
+
+            WritableMap response = new WritableNativeMap();
+            for (int i = 0; i < contours.size(); ++i) {
+                Rect rect = Imgproc.boundingRect(contours.get(i));
+
+                int x = rect.x;
+                int y = rect.y;
+                int w = rect.width;
+                int h = rect.height;
+
+                int ar = rect.width / rect.height;
+
+                if (ar > 5.0) {
+                    int pX = (int)Math.floor((x + w) * 0.03);
+                    int pY = (int)Math.floor((y + h) * 0.03);
+                    x = x - pX;
+                    y = y - pY;
+                    w = w + pX * 2;
+                    h = h + pY * 2;
+
+                    if (x < 0) {
+                        x = 0;
+                    }
+                    if (y < 0) {
+                        y = 0;
+                    }
+                    if (w < 0) {
+                        w = 0;
+                    }
+                    if (h < 0) {
+                        h = 0;
+                    }
+
+
+                    if(w > 340 && h > 60){
+                        response.putInt("ar", ar);
+                        response.putInt("x", x);
+                        response.putInt("y", y);
+                        response.putInt("width", w);
+                        response.putInt("height", h);
+
+                        try {
+                            Rect roi = new Rect(x, y, w, h);
+                            Mat cropped = new Mat(in, roi);
+                            Bitmap bitmap = Bitmap.createBitmap(cropped.cols(), cropped.rows(), Bitmap.Config.ARGB_8888);
+                            Utils.matToBitmap(cropped, bitmap);
+                            response.putString("cropped", toBase64(bitmap, 100));
+                            Imgproc.rectangle(in,
+                                    new Point(x, y),
+                                    new Point(x + w, y+h),
+                                    new Scalar(0,255,0),
+                                    1);
+                        } catch(Exception ex) {
+
+                        }
+
+
+
+                        mrzAreaFound = true;
+                    }
+
+
+
+                    break;
+                }
+            }
+            if(mrzAreaFound) {
+
+                Log.d(TAG, "payload is: " + response.toString());
+                mContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                        .emit("onMRZDetected", response);
+            }
+
+        }
+        if (mUseFaceDetection) {
+
+            Imgproc.equalizeHist(ingray, ingray);
+            rotateImage(ingray);
+
+            int height = ingray.rows();
+            if (Math.round(height * mRelativeFaceSize) > 0) {
+                mAbsoluteFaceSize = Math.round(height * mRelativeFaceSize);
+            }
+
+            //-- Detect faces
+            MatOfRect faces = new MatOfRect();
+            ArrayList<MatOfPoint2f> landmarks = new ArrayList<MatOfPoint2f>();
+            boolean landmarksFound = false;
+            if (mFaceClassifier != null && ingray != null) {
+                if (mUseLandmarks) {
+                    // more sensitive if determining landmarks
+                    mFaceClassifier.detectMultiScale(ingray, faces, 1.3, 5, 0|Objdetect.CASCADE_SCALE_IMAGE, new Size(mAbsoluteFaceSize, mAbsoluteFaceSize), new Size());
+                    mLandmarks.fit(ingray, faces, landmarks);
+                    if (landmarks.size() > 0) {
+                        landmarksFound = true;
+                    }
+                }
+                else {
+                    mFaceClassifier.detectMultiScale(ingray, faces, 1.1, 2, 0|Objdetect.CASCADE_SCALE_IMAGE, new Size(mAbsoluteFaceSize, mAbsoluteFaceSize), new Size());
+                }
+            }
+            Rect[] facesArray = faces.toArray();
+
+            String faceInfo = "";
+            if (facesArray.length > 0) {
+                StringBuffer sb = new StringBuffer();
+                sb.append("{\"faces\":[");
+                for (int i = 0; i < facesArray.length; i++) {
+                    sb.append(getPartJSON(ingray, null, facesArray[i]));
+                    String id = "faceId" + i;
+                    sb.append(",\"faceId\":\""+id+"\"");
+
+                    if (mEyesClassifier != null ||
+                        mNoseClassifier != null ||
+                        mMouthClassifier != null) {
+
+                        Rect faceROI = facesArray[i];
+                        Mat dFace = ingray.submat(faceROI);
 						
-        //                 if (mEyesClassifier != null) {
-        //                     MatOfRect eyes = new MatOfRect();
-        //                     mEyesClassifier.detectMultiScale(dFace, eyes, 1.1, 2);
-        //                     //mEyesClassifier.detectMultiScale(dFace, eyes, 1.1, 2, 0|Objdetect.CASCADE_SCALE_IMAGE, new Size(dFaceW, dFaceH), new Size());
-        //                     Rect[] eyesArray = eyes.toArray();
+                        if (mEyesClassifier != null) {
+                            MatOfRect eyes = new MatOfRect();
+                            mEyesClassifier.detectMultiScale(dFace, eyes, 1.1, 2);
+                            //mEyesClassifier.detectMultiScale(dFace, eyes, 1.1, 2, 0|Objdetect.CASCADE_SCALE_IMAGE, new Size(dFaceW, dFaceH), new Size());
+                            Rect[] eyesArray = eyes.toArray();
 
-        //                     int eye1Index = -1;
-        //                     double centerX = 0.0;
-        //                     double centerY = (double)facesArray[i].height*0.2;
-        //                     if (eyesArray.length > 0) {
-        //                         double minDist = 10000.0;
-        //                         for(int j = 0; j < eyesArray.length; j++) {
-        //                             centerX = (double)facesArray[i].width*0.3;
-        //                             double eyeX = (double)eyesArray[j].x + (double)eyesArray[j].width*0.5;
-        //                             double eyeY = (double)eyesArray[j].y + (double)eyesArray[j].height*0.5;
-        //                             double dist = calcDistance(centerX, centerY, eyeX, eyeY);
-        //                             if (dist < minDist) {
-        //                                 minDist = dist;
-        //                                 eye1Index = j;
-        //                             }
-        //                         }
-        //                         sb.append(getPartJSON(dFace, "firstEye", eyesArray[eye1Index]));
-        //                     }
-        //                     if (eyesArray.length > 1) {
-        //                         double minDist = 10000.0;
-        //                         int eye2Index = -1;
-        //                         for(int j = 0; j < eyesArray.length; j++) {
-        //                             centerX = (double)facesArray[i].width*0.7;
-        //                             double eyeX = (double)eyesArray[j].x + (double)eyesArray[j].width*0.5;
-        //                             double eyeY = (double)eyesArray[j].y + (double)eyesArray[j].height*0.5;
-        //                             double dist = calcDistance(centerX, centerY, eyeX, eyeY);
-        //                             if (dist < minDist && eye1Index != j) {
-        //                                 minDist = dist;
-        //                                 eye2Index = j;
-        //                             }
-        //                         }
-        //                         sb.append(getPartJSON(dFace, "secondEye", eyesArray[eye2Index]));
-        //                     }
-        //                 }
+                            int eye1Index = -1;
+                            double centerX = 0.0;
+                            double centerY = (double)facesArray[i].height*0.2;
+                            if (eyesArray.length > 0) {
+                                double minDist = 10000.0;
+                                for(int j = 0; j < eyesArray.length; j++) {
+                                    centerX = (double)facesArray[i].width*0.3;
+                                    double eyeX = (double)eyesArray[j].x + (double)eyesArray[j].width*0.5;
+                                    double eyeY = (double)eyesArray[j].y + (double)eyesArray[j].height*0.5;
+                                    double dist = calcDistance(centerX, centerY, eyeX, eyeY);
+                                    if (dist < minDist) {
+                                        minDist = dist;
+                                        eye1Index = j;
+                                    }
+                                }
+                                sb.append(getPartJSON(dFace, "firstEye", eyesArray[eye1Index]));
+                            }
+                            if (eyesArray.length > 1) {
+                                double minDist = 10000.0;
+                                int eye2Index = -1;
+                                for(int j = 0; j < eyesArray.length; j++) {
+                                    centerX = (double)facesArray[i].width*0.7;
+                                    double eyeX = (double)eyesArray[j].x + (double)eyesArray[j].width*0.5;
+                                    double eyeY = (double)eyesArray[j].y + (double)eyesArray[j].height*0.5;
+                                    double dist = calcDistance(centerX, centerY, eyeX, eyeY);
+                                    if (dist < minDist && eye1Index != j) {
+                                        minDist = dist;
+                                        eye2Index = j;
+                                    }
+                                }
+                                sb.append(getPartJSON(dFace, "secondEye", eyesArray[eye2Index]));
+                            }
+                        }
 
-        //                 if (mNoseClassifier != null) {
-        //                     MatOfRect noses = new MatOfRect();
-        //                     mNoseClassifier.detectMultiScale(dFace, noses, 1.1, 2);
-        //                     //mNoseClassifier.detectMultiScale(dFace, noses, 1.1, 2, 0|Objdetect.CASCADE_SCALE_IMAGE, new Size(dFaceW, dFaceH), new Size());
-        //                     Rect[] nosesArray = noses.toArray();
-        //                     if (nosesArray.length > 0) {
-        //                         double minDist = 10000.0;
-        //                         int noseIndex = -1;
-        //                         for(int j = 0; j < nosesArray.length; j++) {
-        //                             double centerX = (double)facesArray[i].width*0.5;
-        //                             double centerY = (double)facesArray[i].height*0.5;
-        //                             double noseX = (double)nosesArray[j].x + (double)nosesArray[j].width*0.5;
-        //                             double noseY = (double)nosesArray[j].y + (double)nosesArray[j].height*0.5;
-        //                             double dist = calcDistance(centerX, centerY, noseX, noseY);
-        //                             if (dist < minDist) {
-        //                                 minDist = dist;
-        //                                 noseIndex = j;
-        //                             }
-        //                         }
-        //                         sb.append(getPartJSON(dFace, "nose", nosesArray[noseIndex]));
-        //                     }
-        //                 }
+                        if (mNoseClassifier != null) {
+                            MatOfRect noses = new MatOfRect();
+                            mNoseClassifier.detectMultiScale(dFace, noses, 1.1, 2);
+                            //mNoseClassifier.detectMultiScale(dFace, noses, 1.1, 2, 0|Objdetect.CASCADE_SCALE_IMAGE, new Size(dFaceW, dFaceH), new Size());
+                            Rect[] nosesArray = noses.toArray();
+                            if (nosesArray.length > 0) {
+                                double minDist = 10000.0;
+                                int noseIndex = -1;
+                                for(int j = 0; j < nosesArray.length; j++) {
+                                    double centerX = (double)facesArray[i].width*0.5;
+                                    double centerY = (double)facesArray[i].height*0.5;
+                                    double noseX = (double)nosesArray[j].x + (double)nosesArray[j].width*0.5;
+                                    double noseY = (double)nosesArray[j].y + (double)nosesArray[j].height*0.5;
+                                    double dist = calcDistance(centerX, centerY, noseX, noseY);
+                                    if (dist < minDist) {
+                                        minDist = dist;
+                                        noseIndex = j;
+                                    }
+                                }
+                                sb.append(getPartJSON(dFace, "nose", nosesArray[noseIndex]));
+                            }
+                        }
 
-        //                 if (mMouthClassifier != null) {
-        //                     Rect mouthROI = new Rect(0,(int)Math.round(dFace.rows()*0.6),dFace.cols(),(int)Math.round(dFace.rows()*0.4));
-        //                     Mat dFaceForMouthDetecting = dFace.submat(mouthROI);
+                        if (mMouthClassifier != null) {
+                            Rect mouthROI = new Rect(0,(int)Math.round(dFace.rows()*0.6),dFace.cols(),(int)Math.round(dFace.rows()*0.4));
+                            Mat dFaceForMouthDetecting = dFace.submat(mouthROI);
 							
-        //                     MatOfRect mouths = new MatOfRect();
-        //                     mMouthClassifier.detectMultiScale(dFaceForMouthDetecting, mouths, 1.1, 2);
-        //                     //mMouthClassifier.detectMultiScale(dFaceForMouthDetecting, mouths, 1.1, 2, 0|Objdetect.CASCADE_SCALE_IMAGE, new Size(dFaceW, dFaceH), new Size());
-        //                     Rect[] mouthsArray = mouths.toArray();
-        //                     if (mouthsArray.length > 0) {
-        //                         double minDist = 10000.0;
-        //                         int mouthIndex = -1;
-        //                         for(int j = 0; j < mouthsArray.length; j++) {
-        //                             double centerX = (double)facesArray[i].width*0.5;
-        //                             double centerY = (double)facesArray[i].height*0.8;
-        //                             double mouthX = (double)mouthsArray[j].x + (double)mouthsArray[j].width*0.5;
-        //                             double mouthY = (double)mouthsArray[j].y + (double)mouthsArray[j].height*0.5 + (double)facesArray[i].height*0.6;
-        //                             double dist = calcDistance(centerX, centerY, mouthX, mouthY);
-        //                             if (dist < minDist) {
-        //                                 minDist = dist;
-        //                                 mouthIndex = j;
-        //                             }
-        //                         }
-        //                         Rect dRect = new Rect(mouthsArray[mouthIndex].x,(int)Math.round(mouthsArray[mouthIndex].y + dFace.rows()*0.6),mouthsArray[mouthIndex].width,mouthsArray[mouthIndex].height);
-        //                         sb.append(getPartJSON(dFace, "mouth", dRect));
-        //                     }
-        //                 }
-        //             }
-        //             if (mUseLandmarks) {
-        //                 // fit landmarks for each found face
-        //                 if (landmarksFound) {
-        //                     sb.append(",\"landmarks\":[");
-        //                     // draw them
-        //                     MatOfPoint2f lm = landmarks.get(i);
-        //                     for (int j = 0; j < lm.rows(); j++) {
-        //                         double[] dp = lm.get(j, 0);
-        //                         Point thePt = new Point(dp[0], dp[1]);
-        //                         Point newPt = rotatePoint(ingray, thePt);
-        //                         sb.append("{\"x\":" + newPt.x + ",\"y\":" + newPt.y + "}");
-        //                         if (j != lm.rows() - 1) {
-        //                             sb.append(",");
-        //                         }
-        //                         /** drawing test code ...
-        //                         if (mRotation == Core.ROTATE_90_CLOCKWISE || mRotation == Core.ROTATE_90_COUNTERCLOCKWISE) {
-        //                             newPt.x *= ingray.rows();
-        //                             newPt.y *= ingray.cols();
-        //                         }
-        //                         else {
-        //                             newPt.x *= ingray.cols();
-        //                             newPt.y *= ingray.rows();
-        //                         }
-        //                         Point pt0 = new Point(newPt.x, newPt.y);
-        //                         Point pt1 = new Point(newPt.x + 1.0, newPt.y + 1.0);
-        //                         Imgproc.rectangle(in, pt0, pt1, FACE_RECT_COLOR, 1);
-        //                          */
-        //                     }
-        //                     sb.append("]");
-        //                 }
-        //             }
-        //             if (i != (facesArray.length - 1)) {
-        //                 sb.append("},");
-        //             }
-        //             else {
-        //                 sb.append("}");
-        //             }
-        //         }
-        //         sb.append("]}");
-        //         faceInfo = sb.toString();
-        //     }
-        //     WritableMap response = new WritableNativeMap();
-        //     //Log.d(TAG, "payload is: " + faceInfo);
-        //     response.putString("payload", faceInfo);
-        //     mContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-        //       .emit("onFacesDetectedCv", response);
-        // }
+                            MatOfRect mouths = new MatOfRect();
+                            mMouthClassifier.detectMultiScale(dFaceForMouthDetecting, mouths, 1.1, 2);
+                            //mMouthClassifier.detectMultiScale(dFaceForMouthDetecting, mouths, 1.1, 2, 0|Objdetect.CASCADE_SCALE_IMAGE, new Size(dFaceW, dFaceH), new Size());
+                            Rect[] mouthsArray = mouths.toArray();
+                            if (mouthsArray.length > 0) {
+                                double minDist = 10000.0;
+                                int mouthIndex = -1;
+                                for(int j = 0; j < mouthsArray.length; j++) {
+                                    double centerX = (double)facesArray[i].width*0.5;
+                                    double centerY = (double)facesArray[i].height*0.8;
+                                    double mouthX = (double)mouthsArray[j].x + (double)mouthsArray[j].width*0.5;
+                                    double mouthY = (double)mouthsArray[j].y + (double)mouthsArray[j].height*0.5 + (double)facesArray[i].height*0.6;
+                                    double dist = calcDistance(centerX, centerY, mouthX, mouthY);
+                                    if (dist < minDist) {
+                                        minDist = dist;
+                                        mouthIndex = j;
+                                    }
+                                }
+                                Rect dRect = new Rect(mouthsArray[mouthIndex].x,(int)Math.round(mouthsArray[mouthIndex].y + dFace.rows()*0.6),mouthsArray[mouthIndex].width,mouthsArray[mouthIndex].height);
+                                sb.append(getPartJSON(dFace, "mouth", dRect));
+                            }
+                        }
+                    }
+                    if (mUseLandmarks) {
+                        // fit landmarks for each found face
+                        if (landmarksFound) {
+                            sb.append(",\"landmarks\":[");
+                            // draw them
+                            MatOfPoint2f lm = landmarks.get(i);
+                            for (int j = 0; j < lm.rows(); j++) {
+                                double[] dp = lm.get(j, 0);
+                                Point thePt = new Point(dp[0], dp[1]);
+                                Point newPt = rotatePoint(ingray, thePt);
+                                sb.append("{\"x\":" + newPt.x + ",\"y\":" + newPt.y + "}");
+                                if (j != lm.rows() - 1) {
+                                    sb.append(",");
+                                }
+                                /** drawing test code ...
+                                if (mRotation == Core.ROTATE_90_CLOCKWISE || mRotation == Core.ROTATE_90_COUNTERCLOCKWISE) {
+                                    newPt.x *= ingray.rows();
+                                    newPt.y *= ingray.cols();
+                                }
+                                else {
+                                    newPt.x *= ingray.cols();
+                                    newPt.y *= ingray.rows();
+                                }
+                                Point pt0 = new Point(newPt.x, newPt.y);
+                                Point pt1 = new Point(newPt.x + 1.0, newPt.y + 1.0);
+                                Imgproc.rectangle(in, pt0, pt1, FACE_RECT_COLOR, 1);
+                                 */
+                            }
+                            sb.append("]");
+                        }
+                    }
+                    if (i != (facesArray.length - 1)) {
+                        sb.append("},");
+                    }
+                    else {
+                        sb.append("}");
+                    }
+                }
+                sb.append("]}");
+                faceInfo = sb.toString();
+            }
+            WritableMap response = new WritableNativeMap();
+            //Log.d(TAG, "payload is: " + faceInfo);
+            response.putString("payload", faceInfo);
+            mContext.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+              .emit("onFacesDetected", response);
+        }
 
         boolean sendCallbackData = false;
 
